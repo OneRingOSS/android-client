@@ -1,0 +1,195 @@
+plugins {
+    id 'com.android.library'
+    id 'kotlin-android'
+    id 'kotlin-kapt'
+    id 'maven-publish'
+}
+def versionPropsFile = rootProject.file("version.properties")
+def versionProps = new Properties()
+if (versionPropsFile.exists()) {
+    versionProps.load(new FileInputStream(versionPropsFile))
+}
+def getGitHash = { ->
+    def stdout = new ByteArrayOutputStream()
+    exec {
+        commandLine 'git', 'rev-parse', '--short', 'HEAD'
+        standardOutput = stdout
+    }
+    return stdout.toString().trim()
+}
+def nameSpace = "com.neuroid"
+
+def androidSDKVariant = "android-sdk"
+def debugVariant = "-debug"
+def reactNativeVariant = "react"
+def advancedDeviceVariant = "advanced-device"
+
+ext {
+    versionName = "\"${versionProps['VERSION_MAJOR']}.${versionProps['VERSION_MINOR']}.${versionProps['VERSION_PATCH']}\""
+}
+group = nameSpace
+version = versionName
+
+android {
+    namespace = "com.neuroid.tracker"
+    compileSdkVersion = 34
+
+    defaultConfig {
+        minSdk 21
+        targetSdk 34
+        multiDexEnabled true
+        android.buildFeatures.buildConfig true
+        testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
+        consumerProguardFiles "consumer-rules.pro"
+        versionName = "\"${versionProps['VERSION_MAJOR']}.${versionProps['VERSION_MINOR']}.${versionProps['VERSION_PATCH']}\""
+    }
+
+    buildTypes {
+        debug {
+            minifyEnabled false
+            jniDebuggable true
+            buildConfigField "String", "VERSION_NAME", "${defaultConfig.versionName}"
+            buildConfigField "String", "GIT_HASH", "\"${getGitHash()}\""
+        }
+        release {
+            minifyEnabled true
+            proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
+            buildConfigField "String", "VERSION_NAME", "${defaultConfig.versionName}"
+            buildConfigField "String", "GIT_HASH", "\"${getGitHash()}\""
+        }
+    }
+
+    flavorDimensions = ["native", "adv"]
+
+    productFlavors {
+        android {
+            dimension "native"
+        }
+        reactNative {
+            dimension "native"
+        }
+        lib {
+            dimension "adv"
+        }
+    }
+
+    libraryVariants.all { variant ->
+        variant.outputs.all {
+            def versionName = defaultConfig.versionName.replace('\"', '')
+            outputFileName = "${variant.getFlavorName()}/neuro-id-android-sdk-${variant.getFlavorName()}-$versionName-${variant.buildType.name}.aar"
+        }
+    }
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_1_8
+        targetCompatibility JavaVersion.VERSION_1_8
+    }
+
+    kotlinOptions {
+        jvmTarget = '1.8'
+    }
+
+    buildFeatures {
+        compose true
+    }
+
+    composeOptions {
+        kotlinCompilerExtensionVersion '1.5.14'
+    }
+
+    testOptions {
+        unitTests.returnDefaultValues = true
+    }
+
+    packagingOptions {
+        resources {
+            excludes += '/META-INF/{AL2.0,LGPL2.1}'
+        }
+    }
+}
+
+dependencies {
+    testImplementation 'junit:junit:4.+'
+    testImplementation 'androidx.test.ext:junit:1.1.3'
+    testImplementation "androidx.test:core-ktx:1.4.0"
+    testImplementation 'androidx.test.espresso:espresso-core:3.4.0'
+    testImplementation 'com.google.truth:truth:0.43'
+    testImplementation 'io.mockk:mockk:1.12.0'
+    testImplementation 'org.json:json:20140107'
+    testImplementation "org.jetbrains.kotlinx:kotlinx-coroutines-test:1.7.1"
+
+    implementation 'androidx.core:core-ktx:1.8.0'
+    implementation 'androidx.appcompat:appcompat:1.7.0'
+    implementation 'com.google.code.gson:gson:2.11.0'
+    implementation 'androidx.multidex:multidex:2.0.1'
+    implementation 'androidx.lifecycle:lifecycle-process:2.4.1'
+    implementation 'org.jetbrains.kotlinx:kotlinx-coroutines-android:1.6.1'
+
+    implementation "org.jetbrains.kotlin:kotlin-reflect:1.7.10"
+
+    // compose stuff
+    implementation "androidx.compose.ui:ui:1.7.3"
+
+    reactNativeImplementation("com.facebook.react:react-android:0.71.0-rc.1")
+
+    implementation("com.fingerprint.android:pro:2.8.0") {
+        exclude group: 'org.jetbrains.kotlin', module: 'kotlin-stdlib'
+    }
+
+    // okhttp lib added to keep consistency across the platforms (ReactNative, Native)
+    implementation 'com.squareup.retrofit2:retrofit:2.9.0'
+    implementation 'com.squareup.retrofit2:converter-gson:2.9.0'
+    implementation 'com.squareup.okhttp3:okhttp:4.9.2'
+}
+
+afterEvaluate {
+    // remove the sources jar from the release version of the library
+    tasks.matching { t ->
+        t.name == 'androidLibReleaseSourcesJar'
+                || t.name == 'generateAndroidLibReleaseSources'
+                || t.name == 'reactNativeLibReleaseSourcesJar'
+                || t.name == 'generateReactNativeLibReleaseSourcesJar'
+    }.configureEach { t ->
+        t.enabled = false
+    }
+    publishing {
+        publications {
+            // Creates a Maven publication called "release".
+            androidLibRelease(MavenPublication) {
+                // Applies the component for the release build variant.
+                from components.androidLibRelease
+
+                // You can then customize attributes of the publication as shown below.
+                groupId = nameSpace
+                artifactId = "$androidSDKVariant"
+                version = versionName
+            }
+            // Creates a Maven publication called “debug”.
+            androidLibDebug(MavenPublication) {
+                // Applies the component for the debug build variant.
+                from components.androidLibDebug
+
+                groupId = nameSpace
+                artifactId = "$androidSDKVariant$debugVariant"
+                version = versionName
+            }
+            reactNativeLibRelease(MavenPublication) {
+                // Applies the component for the release build variant.
+                from components.reactNativeLibRelease
+
+                // You can then customize attributes of the publication as shown below.
+                groupId = nameSpace
+                artifactId = "$reactNativeVariant-$androidSDKVariant"
+                version = versionName
+            }
+            // Creates a Maven publication called “debug”.
+            reactNativeLibDebug(MavenPublication) {
+                // Applies the component for the debug build variant.
+                from components.reactNativeLibDebug
+
+                groupId = nameSpace
+                artifactId = "$reactNativeVariant-$androidSDKVariant$debugVariant"
+                version = versionName
+            }
+        }
+    }
+}
